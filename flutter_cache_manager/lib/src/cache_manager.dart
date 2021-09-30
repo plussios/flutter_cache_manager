@@ -71,8 +71,7 @@ class CacheManager implements BaseCacheManager {
   /// downloaded in the background. When a cached file is not available the
   /// newly downloaded file is returned.
   @override
-  Future<File> getSingleFile(
-    String url, {
+  Future<File> getSingleFile(String url, {
     String? key,
     Map<String, String>? headers,
   }) async {
@@ -115,31 +114,37 @@ class CacheManager implements BaseCacheManager {
   /// might be outdated and a new file is being downloaded in the background.
   @override
   Stream<FileResponse> getFileStream(String url,
-      {String? key, Map<String, String>? headers, bool withProgress = false}) {
+      {String? key, Map<String,
+          String>? headers, bool withProgress = false, bool updateCache = false, bool useCache = true}) {
     key ??= url;
     final streamController = StreamController<FileResponse>();
-    _pushFileToStream(streamController, url, key, headers, withProgress);
+    _pushFileToStream(
+        streamController, url, key, headers, withProgress, updateCache, useCache);
     return streamController.stream;
   }
 
   Future<void> _pushFileToStream(StreamController streamController, String url,
-      String? key, Map<String, String>? headers, bool withProgress) async {
+      String? key, Map<String, String>? headers, bool withProgress,
+      bool updateCache, bool useCache) async {
     key ??= url;
     FileInfo? cacheFile;
-    try {
-      cacheFile = await getFileFromCache(key);
-      if (cacheFile != null) {
-        streamController.add(cacheFile);
-        withProgress = false;
+    if (useCache) {
+      try {
+        cacheFile = await getFileFromCache(key);
+        if (cacheFile != null) {
+          streamController.add(cacheFile);
+          withProgress = false;
+        }
+      } catch (e) {
+        print(
+            'CacheManager: Failed to load cached file for $url with error:\n$e');
       }
-    } catch (e) {
-      print(
-          'CacheManager: Failed to load cached file for $url with error:\n$e');
     }
-    if (cacheFile == null || cacheFile.validTill.isBefore(DateTime.now())) {
+    if (cacheFile == null || cacheFile.validTill.isBefore(DateTime.now()) ||
+        updateCache) {
       try {
         await for (var response
-            in _webHelper.downloadFile(url, key: key, authHeaders: headers)) {
+        in _webHelper.downloadFile(url, key: key, authHeaders: headers)) {
           if (response is DownloadProgress && withProgress) {
             streamController.add(response);
           }
@@ -165,16 +170,16 @@ class CacheManager implements BaseCacheManager {
   @override
   Future<FileInfo> downloadFile(String url,
       {String? key,
-      Map<String, String>? authHeaders,
-      bool force = false}) async {
+        Map<String, String>? authHeaders,
+        bool force = false}) async {
     key ??= url;
     var fileResponse = await _webHelper
         .downloadFile(
-          url,
-          key: key,
-          authHeaders: authHeaders,
-          ignoreMemCache: force,
-        )
+      url,
+      key: key,
+      authHeaders: authHeaders,
+      ignoreMemCache: force,
+    )
         .firstWhere((r) => r is FileInfo);
     return fileResponse as FileInfo;
   }
@@ -183,7 +188,7 @@ class CacheManager implements BaseCacheManager {
   /// Specify [ignoreMemCache] to force a re-read from the database
   @override
   Future<FileInfo?> getFileFromCache(String key,
-          {bool ignoreMemCache = false}) =>
+      {bool ignoreMemCache = false}) =>
       _store.getFile(key, ignoreMemCache: ignoreMemCache);
 
   ///Returns the file from memory if it has already been fetched
@@ -198,14 +203,13 @@ class CacheManager implements BaseCacheManager {
   /// is re-used.
   /// The returned [File] is saved on disk.
   @override
-  Future<File> putFile(
-    String url,
-    Uint8List fileBytes, {
-    String? key,
-    String? eTag,
-    Duration maxAge = const Duration(days: 30),
-    String fileExtension = 'file',
-  }) async {
+  Future<File> putFile(String url,
+      Uint8List fileBytes, {
+        String? key,
+        String? eTag,
+        Duration maxAge = const Duration(days: 30),
+        String fileExtension = 'file',
+      }) async {
     key ??= url;
     var cacheObject = await _store.retrieveCacheData(key);
     cacheObject ??= CacheObject(
@@ -234,14 +238,13 @@ class CacheManager implements BaseCacheManager {
   /// is re-used.
   /// The returned [File] is saved on disk.
   @override
-  Future<File> putFileStream(
-    String url,
-    Stream<List<int>> source, {
-    String? key,
-    String? eTag,
-    Duration maxAge = const Duration(days: 30),
-    String fileExtension = 'file',
-  }) async {
+  Future<File> putFileStream(String url,
+      Stream<List<int>> source, {
+        String? key,
+        String? eTag,
+        Duration maxAge = const Duration(days: 30),
+        String fileExtension = 'file',
+      }) async {
     key ??= url;
     var cacheObject = await _store.retrieveCacheData(key);
     cacheObject ??= CacheObject(url,
@@ -260,7 +263,7 @@ class CacheManager implements BaseCacheManager {
     // Always copy file
     var sink = file.openWrite();
     await source
-        // this map is need to map UInt8List to List<int>
+    // this map is need to map UInt8List to List<int>
         .map((event) => event)
         .pipe(sink);
 
